@@ -15,8 +15,8 @@ from pvrecorder import PvRecorder
 class PicoVoskCoquiVoiceIO(VoiceIOContract):
     def __init__(
         self,
-        vosk_model_path: str = "model",
-        wake_word: str = "hey assistant",
+        vosk_model_path: str,
+        wake_word: str,
         sample_rate: int = 16000,
     ):
         # ===== CALLBACK =====
