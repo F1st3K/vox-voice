@@ -1,0 +1,6 @@
+pvporcupine==1.9.2
+sounddevice
+numpy
+aio_pika
+vosk
+scipy
