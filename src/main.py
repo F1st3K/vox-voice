@@ -1,9 +1,9 @@
 import asyncio
 import os
 
-from Dialog.RabbitDialog import RabbitDialog
-from VoiceIO.PicoVoskCoquiVoiceIO import PicoVoskCoquiVoiceIO
-from VoxFlow import VoxFlow
+from dialog.rabbit_dialog import RabbitDialog
+from voice_io.pvp_voice_io import PicoVoskPiperVoiceIO
+from flow import Flow
 
 
 # ========================
@@ -12,16 +12,17 @@ from VoxFlow import VoxFlow
 RABBIT_URL = os.getenv("RABBIT_URL", "amqp://guest:guest@localhost:5672/")
 SOURCE_NAME = os.getenv("SOURCE_NAME", "assistant")
 WAKE_WORD = os.getenv("WAKE_WORD", "picovoice")
-VOSK_MODEL_PATH = os.getenv("VOSK_MODEL_PATH", "/models/vosk")
+STT_MODEL_PATH = os.getenv("STT_MODEL_PATH", "/models/stt")
+TTS_MODEL_PATH = os.getenv("TTS_MODEL_PATH", "/models/tts")
 
-# ========================
+# =======================k
 # MAIN LOOP
 # ========================
 async def main():
     dialog = RabbitDialog(RABBIT_URL, SOURCE_NAME)
-    io = PicoVoskCoquiVoiceIO(VOSK_MODEL_PATH, WAKE_WORD)
+    io = PicoVoskPiperVoiceIO(STT_MODEL_PATH, TTS_MODEL_PATH, WAKE_WORD)
 
-    flow = VoxFlow(dialog, io)
+    flow = Flow(dialog, io)
     flow.bind()
 
     try:

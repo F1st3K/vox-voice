@@ -1,8 +1,8 @@
-from Dialog.DialogContract import DialogContract
-from VoiceIO.VoiceIOContract import VoiceIOContract
+from dialog.dialog_contract import DialogContract
+from voice_io.voice_io_contract import VoiceIOContract
 
 
-class VoxFlow:
+class Flow:
 
     def __init__(self, dialog: DialogContract, io: VoiceIOContract):
         self.dialog = dialog

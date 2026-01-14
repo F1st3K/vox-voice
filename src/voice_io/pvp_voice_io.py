@@ -1,4 +1,4 @@
-from VoiceIO.VoiceIOContract import VoiceIOContract
+from voice_io.voice_io_contract import VoiceIOContract
 import asyncio
 import json
 import numpy as np
@@ -6,16 +6,38 @@ from typing import Optional, Callable
 import threading
 
 import sounddevice as sd
+print(sd.query_devices())
+
+from scipy.signal import resample_poly
+# Получаем список всех устройств
+# devices = sd.query_devices()
+# if not devices:
+#     print("No audio devices found!")
+
+# # Выбираем default device: если есть стерео аналог
+# device_index = None
+# for i, d in enumerate(devices):
+#     if "Analog" in d["name"] and d["max_output_channels"] > 0:
+#         device_index = i
+#         break
+# if device_index is None:
+#     device_index = sd.default.device[1]  # fallback на системный default
+
+# print(f"Using device {device_index}: {devices[device_index]['name']}")
+# sd.default.device = device_index
+# print("defult divice;")
+# sd.default.device = [0, 1]
+print(sd.default.device)
 from vosk import Model, KaldiRecognizer
-from TTS.api import TTS
 import pvporcupine
 from pvrecorder import PvRecorder
+from piper import PiperVoice
 
-
-class PicoVoskCoquiVoiceIO(VoiceIOContract):
+class PicoVoskPiperVoiceIO(VoiceIOContract):
     def __init__(
         self,
         vosk_model_path: str,
+        piper_model_path: str,
         wake_word: str,
         sample_rate: int = 16000,
     ):
@@ -34,17 +56,14 @@ class PicoVoskCoquiVoiceIO(VoiceIOContract):
         self._listen_lock = threading.Lock()
 
         # ===== TTS =====
-        self.tts = TTS(
-            model_name="tts_models/en/ljspeech/tacotron2-DDC",
-            progress_bar=False,
-            gpu=False,
-        )
+        self.tts = PiperVoice.load(piper_model_path+"/ru_RU-irina-medium.onnx")
+
         self._tts_queue: asyncio.Queue[Optional[str]] = asyncio.Queue()
         self._tts_task: Optional[asyncio.Task] = None
 
         # ===== PICOVOICE =====
         self.porcupine = pvporcupine.create(keywords=[wake_word])
-        self.recorder = PvRecorder(device_index=-1, frame_length=self.porcupine.frame_length)
+        self.recorder = PvRecorder(device_index=1, frame_length=self.porcupine.frame_length)
 
         # ===== VOSK =====
         self.sample_rate = sample_rate
@@ -60,8 +79,10 @@ class PicoVoskCoquiVoiceIO(VoiceIOContract):
 
         if not self._tts_task:
             self._tts_task = asyncio.create_task(self._tts_worker())
+            print("[*] Start tts worker")
 
         # основной аудио-цикл в отдельном потоке
+        print("[*] Start audio loop")
         await asyncio.to_thread(self._audio_loop)
 
     async def close(self):
@@ -80,6 +101,7 @@ class PicoVoskCoquiVoiceIO(VoiceIOContract):
     # ---- SAY ----
     def say(self, text: str) -> None:
         """Fire-and-forget последовательный TTS"""
+        print("say:" + text)
         if not self._tts_task and self.loop:
             self._tts_task = self.loop.create_task(self._tts_worker())
         self._tts_queue.put_nowait(text)
@@ -87,8 +109,10 @@ class PicoVoskCoquiVoiceIO(VoiceIOContract):
     # ---- LISTEN ----
     async def listen(self) -> str:
         """Принудительно включить STT и дождаться текста"""
+        print("listenning...")
         self._start_listening()
         text = await self.text_queue.get()
+        print("listened: " + text)
         return text
 
     # ================= INTERNAL =================
@@ -142,7 +166,32 @@ class PicoVoskCoquiVoiceIO(VoiceIOContract):
             self._tts_queue.task_done()
 
     def _say_blocking(self, text: str):
-        """Блокирующая генерация и воспроизведение речи через Coqui"""
-        wav = self.tts.tts(text)
-        sd.play(wav, samplerate=22050)
-        sd.wait()
+        print("start say:", flush=True)
+
+        # Открываем поток один раз
+        with sd.OutputStream(
+            device=3,
+            samplerate=44100,
+            channels=1,
+            dtype="float32",
+        ) as stream:
+
+            print("decoding & streaming...", flush=True)
+
+            # Генерация по чанкам
+            for i, chunk in enumerate(self.tts.synthesize(text)):
+                audio_chunk = chunk.audio_float_array
+                if audio_chunk is None or len(audio_chunk) == 0:
+                    continue
+
+                # resample сразу
+                audio_44100 = resample_poly(audio_chunk, 44100, 22050).astype(np.float32)
+
+                # пишем в поток сразу
+                stream.write(audio_44100)
+
+                # можно вывести прогресс
+                print(f"chunk {i} played, {len(audio_chunk)} samples", flush=True)
+
+        print("done", flush=True)
+

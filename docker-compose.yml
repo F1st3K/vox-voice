@@ -1,29 +1,36 @@
-version: "3.9"
-
 services:
   assistant:
     build: .
     image: assistant:local
     devices:
       - "/dev/snd:/dev/snd"
+    group_add:
+      - audio
     volumes:
-      - ./.models/vosk:/models/vosk
+      - ./.models:/models:ro
     environment:
       - RABBIT_URL=amqp://user:password@rabbitmq:5672/
       - SOURCE_NAME=assistant
       - WAKE_WORD=picovoice
-      - VOSK_MODEL_PATH=/models/vosk
+      - STT_MODEL_PATH=/models/vosk
+      - TTS_MODEL_PATH=/models/piper
     depends_on:
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
 
   rabbitmq:
     image: rabbitmq:3-management
-    container_name: rabbitmq
     ports:
-      - "5672:5672"   # основной AMQP порт
-      - "15672:15672" # веб-менеджер
+      - "5672:5672"
+      - "15672:15672"
     environment:
       RABBITMQ_DEFAULT_USER: user
       RABBITMQ_DEFAULT_PASS: password
     volumes:
       - ./.rabbitmq:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
