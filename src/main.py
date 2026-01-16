@@ -2,6 +2,7 @@ import asyncio
 import os
 
 from dialog.rabbit_dialog import RabbitDialog
+from sound_io.device_sound_io import DeviceSoundIO
 from voice_io.pvp_voice_io import PicoVoskPiperVoiceIO
 from flow import Flow
 
@@ -20,14 +21,20 @@ TTS_MODEL_PATH = os.getenv("TTS_MODEL_PATH", "/models/tts")
 # ========================
 async def main():
     dialog = RabbitDialog(RABBIT_URL, SOURCE_NAME)
-    io = PicoVoskPiperVoiceIO(STT_MODEL_PATH, TTS_MODEL_PATH, WAKE_WORD)
+    sound = DeviceSoundIO()
+    io = PicoVoskPiperVoiceIO(sound, STT_MODEL_PATH, TTS_MODEL_PATH, WAKE_WORD)
 
     flow = Flow(dialog, io)
     flow.bind()
 
+    stop_event = asyncio.Event()
     try:
         await dialog.start()
         await io.start()
+
+        print("✅ System started")
+        await stop_event.wait()        
+
     except KeyboardInterrupt:
         print("[INFO] KeyboardInterrupt received, shutting down...")
     except Exception as e:
