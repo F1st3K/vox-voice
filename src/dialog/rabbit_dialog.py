@@ -26,7 +26,10 @@ class RabbitDialog(DialogContract):
     def pub_input(self, text: str) -> None:
         if self.channel is None:
             raise RuntimeError("Channel not initialized. Call start first.")
-        asyncio.create_task(self._publish("input", {"session_id": 0, "text": text}))
+        asyncio.run_coroutine_threadsafe(
+                self._publish("input", {"session_id": 0, "text": text}),
+                self.loop
+            )
 
     async def _publish(self, event: str, payload: dict) -> None:
         if self.channel is None:
@@ -54,6 +57,7 @@ class RabbitDialog(DialogContract):
         self.queue = await self.channel.declare_queue(self.SUB, durable=True)
         await self.queue.bind(sub_exchange, routing_key=f"{self.SUB}.*.{self.source}")
 
+        self.loop = asyncio.get_running_loop()
         asyncio.create_task(self._listen_rabbit())
         print("[*] Listen RabbitMQ ...")
 
