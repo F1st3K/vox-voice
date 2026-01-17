@@ -3,7 +3,8 @@ import numpy as np
 
 
 class SoundIOContract(Protocol):
-    samplerate: int
+    input_sr: int
+    output_sr: int
 
     def run_input(self, callback: Callable[[np.ndarray], None]) -> None: ...
     def stop_input(self) -> None: ...

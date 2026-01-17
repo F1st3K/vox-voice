@@ -1,3 +1,4 @@
+from pathlib import Path
 import queue
 import time
 from sound_io.sound_io_contract import SoundIOContract
@@ -27,7 +28,7 @@ class PicoVoskPiperVoiceIO(VoiceIOContract):
         self.sound_io = sound_io
 
         # ===== TTS =====
-        self.tts = PiperVoice.load(piper_model_path+"/ru_RU-irina-medium.onnx")
+        self.tts = PiperVoice.load(str(next(Path(piper_model_path).glob("*.onnx"))))
 
         # ===== PICOVOICE =====
         self.porcupine = pvporcupine.create(keywords=[wake_word])
@@ -35,7 +36,7 @@ class PicoVoskPiperVoiceIO(VoiceIOContract):
 
         # ===== VOSK =====
         self.vosk_model = Model(vosk_model_path)
-        self.recognizer = KaldiRecognizer(self.vosk_model, 16000)
+        self.recognizer = KaldiRecognizer(self.vosk_model, self.porcupine.sample_rate)
 
         # ===== STATE =====
         self.state = "IDLE"
@@ -46,7 +47,7 @@ class PicoVoskPiperVoiceIO(VoiceIOContract):
         self._listen_lock = threading.Lock()
 
         # ===== SILENCE =====
-        self.silence_timeout = 10.0  # секунды
+        self.silence_timeout = 1.0  # секунды
         self._last_voice_ts = 0.0
 
         self.res_text = ""
@@ -75,10 +76,15 @@ class PicoVoskPiperVoiceIO(VoiceIOContract):
                 if audio_chunk is None or len(audio_chunk) == 0:
                     continue
 
-                audio_convert = resample_poly(audio_chunk, self.sound_io.samplerate, 22050).astype(np.float32)
+                if chunk.sample_rate != self.sound_io.output_sr:
+                    audio_chunk = resample_poly(
+                        audio_chunk,
+                        self.sound_io.output_sr,
+                        chunk.sample_rate
+                    )
 
                 print(f"chunk {i} generated, {len(audio_chunk)} samples", flush=True)
-                yield audio_convert
+                yield audio_chunk
 
         self.sound_io.play_chunks(chunk_gen())
 
@@ -101,18 +107,17 @@ class PicoVoskPiperVoiceIO(VoiceIOContract):
 
     def _audio_callback(self, audio_chunk: np.ndarray):
         """
-        audio_chunk: float32 mono
+        audio_chunk: int16 mono
         """
 
-        pcm_i16 = np.clip(
-            resample_poly(
-                audio_chunk,
-                16000,
-                self.sound_io.samplerate
-            ) * 32768,
-            -32768,
-            32767
-        ).astype(np.int16)
+        if self.porcupine.sample_rate != self.sound_io.input_sr:
+            audio_chunk = resample_poly(
+                audio_chunk.astype(np.float32),
+                self.porcupine.sample_rate,
+                self.sound_io.input_sr
+            )
+            np.clip(audio_chunk, -32768, 32767, out=audio_chunk)
+            audio_chunk = audio_chunk.astype(np.int16, copy=False) 
 
         # ================= IDLE =================
         if self.state == "IDLE":
@@ -120,7 +125,7 @@ class PicoVoskPiperVoiceIO(VoiceIOContract):
                 self._start_listening(mode="FORCE")
                 return
 
-            self._pp_buffer = np.concatenate([self._pp_buffer, pcm_i16])
+            self._pp_buffer = np.concatenate([self._pp_buffer, audio_chunk])
 
             while len(self._pp_buffer) >= self.porcupine.frame_length:
                 frame = self._pp_buffer[:self.porcupine.frame_length]
@@ -128,6 +133,7 @@ class PicoVoskPiperVoiceIO(VoiceIOContract):
 
                 if self.porcupine.process(frame) >= 0:
                     print("🔥 Wake word detected")
+                    self._play_wake_signal()
                     self._start_listening("WAKE")
                     self._pp_buffer = np.zeros(0, dtype=np.int16)
                     return
@@ -137,11 +143,15 @@ class PicoVoskPiperVoiceIO(VoiceIOContract):
         # ================= LISTEN =================
         if self.state in ("WAKE_LISTEN", "FORCE_LISTEN"):
             with self._listen_lock:
-                rs = ""
-                if self.recognizer.AcceptWaveform(pcm_i16.tobytes()):
+                if self.recognizer.AcceptWaveform(audio_chunk.tobytes()):
                     rs = json.loads(self.recognizer.Result())["text"]
-                if rs != "":
-                    self.res_text = self.res_text + ". " + rs
+                    self._last_voice_ts = time.monotonic()
+
+                    if self.res_text:
+                        self.res_text = self.res_text + ", " + rs
+                    else:
+                        self.res_text = rs
+                elif json.loads(self.recognizer.PartialResult())["partial"]:
                     self._last_voice_ts = time.monotonic()
 
             b = time.monotonic() - self._last_voice_ts
@@ -150,6 +160,9 @@ class PicoVoskPiperVoiceIO(VoiceIOContract):
                 print("🔇 Silence detected")
                 print(b)
                 print(self.silence_timeout)
+
+                if self.res_text:
+                    self.res_text = self.res_text[0].upper() + self.res_text[1:] + "."
                 print(self.res_text)
 
                 if self.state == "WAKE_LISTEN" and self.on_wake:
@@ -178,3 +191,31 @@ class PicoVoskPiperVoiceIO(VoiceIOContract):
         self.force_listen = False
 
 
+    def _play_wake_signal(self):
+        sample_rate = self.sound_io.input_sr   # твой sample_rate
+        duration = 0.6
+
+        # Временная ось
+        t = np.linspace(0, duration, int(sample_rate * duration), endpoint=False, dtype=np.float32)
+
+        # Две ноты (двухчастотный beep)
+        freq1 = 1200.0
+        freq2 = 1500.0
+        signal = 0.15 * np.sin(2*np.pi*freq1*t) + 0.15 * np.sin(2*np.pi*freq2*t)
+
+        # Плавное экспоненциальное затухание
+        decay = np.exp(-5 * t)  # чем выше коэффициент, тем быстрее спад
+        signal *= decay
+
+        # Минимальный fade-in/fade-out, чтобы не было щелчков
+        fade_len = int(sample_rate * 0.01)  # 10 ms
+        fade_in = np.linspace(0, 1, fade_len, dtype=np.float32)
+        fade_out = np.linspace(1, 0, fade_len, dtype=np.float32)
+        signal[:fade_len] *= fade_in
+        signal[-fade_len:] *= fade_out
+
+        # Если функция принимает Iterable[ndarray]
+        chunks = [signal]
+
+        # Вызов функции воспроизведения (замени play_chunks на свою)
+        self.sound_io.play_chunks(chunks)

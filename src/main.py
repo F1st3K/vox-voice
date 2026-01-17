@@ -12,17 +12,38 @@ from flow import Flow
 # ========================
 RABBIT_URL = os.getenv("RABBIT_URL", "amqp://guest:guest@localhost:5672/")
 SOURCE_NAME = os.getenv("SOURCE_NAME", "assistant")
+
 WAKE_WORD = os.getenv("WAKE_WORD", "picovoice")
 STT_MODEL_PATH = os.getenv("STT_MODEL_PATH", "/models/stt")
 TTS_MODEL_PATH = os.getenv("TTS_MODEL_PATH", "/models/tts")
 
-# =======================k
+SOUND_DEVICE = int(os.getenv("SOUND_DEVICE", 3))
+SOUND_INPUT_DEVICE = int(os.getenv("SOUND_INPUT_DEVICE", SOUND_DEVICE))
+SOUND_OUTPUT_DEVICE = int(os.getenv("SOUND_OUTPUT_DEVICE", SOUND_DEVICE))
+INPUT_SAMPLE_RATE = int(os.getenv("INPUT_SAMPLE_RATE", 48000))
+OUTPUT_SAMPLE_RATE = int(os.getenv("OUTPUT_SAMPLE_RATE", 44100))
+
+
+# ========================
 # MAIN LOOP
 # ========================
 async def main():
-    dialog = RabbitDialog(RABBIT_URL, SOURCE_NAME)
-    sound = DeviceSoundIO()
-    io = PicoVoskPiperVoiceIO(sound, STT_MODEL_PATH, TTS_MODEL_PATH, WAKE_WORD)
+    dialog = RabbitDialog(
+        RABBIT_URL,
+        SOURCE_NAME
+    )
+    sound = DeviceSoundIO(
+        input_device_index=SOUND_INPUT_DEVICE,
+        output_device_index=SOUND_OUTPUT_DEVICE,
+        input_sample_rate=INPUT_SAMPLE_RATE,
+        output_sample_rate=OUTPUT_SAMPLE_RATE
+    )
+    io = PicoVoskPiperVoiceIO(
+        sound,
+        STT_MODEL_PATH,
+        TTS_MODEL_PATH,
+        WAKE_WORD
+    )
 
     flow = Flow(dialog, io)
     flow.bind()
