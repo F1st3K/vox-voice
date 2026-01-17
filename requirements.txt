@@ -4,5 +4,4 @@ numpy
 aio_pika
 vosk
 scipy
-pvrecorder
 piper-tts
