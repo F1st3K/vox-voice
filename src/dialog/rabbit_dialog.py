@@ -27,7 +27,7 @@ class RabbitDialog(DialogContract):
         if self.channel is None:
             raise RuntimeError("Channel not initialized. Call start first.")
         asyncio.run_coroutine_threadsafe(
-                self._publish("input", {"session_id": 0, "text": text}),
+                self._publish("input", {"text": text}),
                 self.loop
             )
 
@@ -84,7 +84,7 @@ class RabbitDialog(DialogContract):
         elif event == "ask" and self.on_ask:
             async def ask_publish():
                 result = await self.on_ask(payload["text"])
-                await self._publish("response", {"session_id": 0, "text": result})
+                await self._publish("response", {"session_id": payload["session_id"], "text": result})
 
             asyncio.create_task(ask_publish())
 

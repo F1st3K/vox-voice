@@ -21,7 +21,10 @@ class PicoVoskPiperVoiceIO(VoiceIOContract):
         sound_io: SoundIOContract,
         vosk_model_path: str,
         piper_model_path: str,
-        wake_word: str
+        wake_word: str = "picovoice",
+        sensitivities: float = 1,
+        silence_timeout: float = 0,
+        first_silence_timeout: float = 0,
     ):
         # ===== CALLBACK =====
         self.on_wake: Optional[Callable[[str], None]] = None
@@ -31,7 +34,7 @@ class PicoVoskPiperVoiceIO(VoiceIOContract):
         self.tts = PiperVoice.load(str(next(Path(piper_model_path).glob("*.onnx"))))
 
         # ===== PICOVOICE =====
-        self.porcupine = pvporcupine.create(keywords=[wake_word])
+        self.porcupine = pvporcupine.create(keywords=[wake_word], sensitivities=[sensitivities])
         self._pp_buffer = np.zeros(0, dtype=np.int16)
 
         # ===== VOSK =====
@@ -47,7 +50,8 @@ class PicoVoskPiperVoiceIO(VoiceIOContract):
         self._listen_lock = threading.Lock()
 
         # ===== SILENCE =====
-        self.silence_timeout = 1.0  # секунды
+        self.silence_timeout = silence_timeout  # секунды
+        self.first_silence_timeout = first_silence_timeout  # секунды
         self._last_voice_ts = 0.0
 
         self.res_text = ""
@@ -175,7 +179,7 @@ class PicoVoskPiperVoiceIO(VoiceIOContract):
 
     def _start_listening(self, mode: str):
         self.recognizer.Reset()
-        self._last_voice_ts = time.monotonic()
+        self._last_voice_ts = time.monotonic() + self.first_silence_timeout 
 
         if mode == "WAKE":
             self.state = "WAKE_LISTEN"

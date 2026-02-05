@@ -17,6 +17,10 @@ WAKE_WORD = os.getenv("WAKE_WORD", "picovoice")
 STT_MODEL_PATH = os.getenv("STT_MODEL_PATH", "/models/stt")
 TTS_MODEL_PATH = os.getenv("TTS_MODEL_PATH", "/models/tts")
 
+SENSITIVITIES = float(os.getenv("SENSITIVITIES", 0.7))
+SILENCE_TMOUT = float(os.getenv("SILENCE_TMOUT", 0.8))
+FIRST_SILENCE_TMOUT = float(os.getenv("FIRST_SENSITIVITIES_TMOUT", 5))
+
 SOUND_DEVICE = int(os.getenv("SOUND_DEVICE", 3))
 SOUND_INPUT_DEVICE = int(os.getenv("SOUND_INPUT_DEVICE", SOUND_DEVICE))
 SOUND_OUTPUT_DEVICE = int(os.getenv("SOUND_OUTPUT_DEVICE", SOUND_DEVICE))
@@ -42,7 +46,10 @@ async def main():
         sound,
         STT_MODEL_PATH,
         TTS_MODEL_PATH,
-        WAKE_WORD
+        WAKE_WORD,
+        SENSITIVITIES,
+        SILENCE_TMOUT,
+        FIRST_SILENCE_TMOUT
     )
 
     flow = Flow(dialog, io)
