@@ -197,8 +197,7 @@ class PicoVoskPiperVoiceIO(VoiceIOContract):
 
     def _play_wake_signal(self):
         sample_rate = self.sound_io.input_sr   # твой sample_rate
-        duration = 0.6
-
+        duration = 0.4
         # Временная ось
         t = np.linspace(0, duration, int(sample_rate * duration), endpoint=False, dtype=np.float32)
 
